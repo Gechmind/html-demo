@@ -1,0 +1,1160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数仓时间维度分析 - 累计指标计算演示</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .app-container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+            overflow: hidden;
+        }
+        
+        .app-header {
+            background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+            color: white;
+            padding: 30px 40px;
+            text-align: center;
+        }
+        
+        .app-header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+        
+        .app-header p {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+        
+        .main-content {
+            padding: 30px 40px;
+        }
+        
+        .control-panel {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 30px;
+            border: 1px solid #e9ecef;
+        }
+        
+        .control-row {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .control-row:last-child {
+            margin-bottom: 0;
+        }
+        
+        .control-label {
+            font-weight: 600;
+            min-width: 120px;
+            color: #495057;
+        }
+        
+        .time-slider-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .time-slider {
+            flex: 1;
+            height: 8px;
+            border-radius: 4px;
+            background: #dee2e6;
+            outline: none;
+            -webkit-appearance: none;
+            cursor: pointer;
+        }
+        
+        .time-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #e74c3c, #c0392b);
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .current-date {
+            background: linear-gradient(45deg, #2c3e50, #34495e);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 16px;
+            font-weight: bold;
+            min-width: 140px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .scenario-select {
+            padding: 12px 20px;
+            border: 2px solid #dee2e6;
+            border-radius: 10px;
+            background: white;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-width: 200px;
+        }
+        
+        .scenario-select:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+        }
+        
+        .timeline-section {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        
+        .section-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #2c3e50;
+            margin-bottom: 25px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .section-title::before {
+            content: '';
+            width: 4px;
+            height: 24px;
+            background: linear-gradient(45deg, #3498db, #2980b9);
+            border-radius: 2px;
+        }
+        
+        .legend-container {
+            display: flex;
+            gap: 25px;
+            margin-bottom: 25px;
+            flex-wrap: wrap;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .legend-dot {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .legend-discovery { background: linear-gradient(45deg, #3498db, #2980b9); }
+        .legend-planned { background: linear-gradient(45deg, #f39c12, #e67e22); }
+        .legend-resolved { background: linear-gradient(45deg, #27ae60, #229954); }
+        .legend-closed { background: linear-gradient(45deg, #9b59b6, #8e44ad); }
+        
+        .timeline-canvas {
+            position: relative;
+            height: 350px;
+            background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
+            border: 2px solid #e9ecef;
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 20px;
+            padding-left: 80px;
+        }
+        
+        .timeline-axis {
+            position: absolute;
+            bottom: 30px;
+            left: 80px;
+            right: 20px;
+            height: 3px;
+            background: linear-gradient(90deg, #bdc3c7, #95a5a6);
+            border-radius: 2px;
+        }
+        
+        .timeline-grid {
+            position: absolute;
+            top: 40px;
+            bottom: 30px;
+            left: 80px;
+            right: 20px;
+        }
+        
+        .grid-line {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 1px;
+            background: #e9ecef;
+            opacity: 0.6;
+        }
+        
+        .grid-label {
+            position: absolute;
+            bottom: -25px;
+            transform: translateX(-50%);
+            font-size: 11px;
+            color: #6c757d;
+            font-weight: 500;
+        }
+        
+        .y-axis-labels {
+            position: absolute;
+            left: 10px;
+            top: 60px;
+            bottom: 50px;
+            width: 60px;
+        }
+        
+        .y-axis-label {
+            position: absolute;
+            font-size: 12px;
+            font-weight: bold;
+            color: #495057;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 4px 8px;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        
+        .timeline-cursor {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: linear-gradient(180deg, #e74c3c, #c0392b);
+            cursor: pointer;
+            z-index: 100;
+            transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 2px;
+        }
+        
+        .timeline-cursor::before {
+            content: '';
+            position: absolute;
+            top: -10px;
+            left: -8px;
+            width: 20px;
+            height: 20px;
+            background: linear-gradient(45deg, #e74c3c, #c0392b);
+            border-radius: 50%;
+            border: 3px solid white;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        
+        .timeline-cursor::after {
+            content: attr(data-date);
+            position: absolute;
+            top: -50px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #2c3e50;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: bold;
+            white-space: nowrap;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .timeline-cursor::after::before {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 6px solid transparent;
+            border-top-color: #2c3e50;
+        }
+        
+        .event-track {
+            position: absolute;
+            height: 40px;
+            left: 80px;
+            right: 20px;
+        }
+        
+        .event-item {
+            position: absolute;
+            height: 30px;
+            border-radius: 15px;
+            color: white;
+            font-size: 11px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            min-width: 60px;
+        }
+        
+        .event-item:hover {
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        
+        .event-discovery { background: linear-gradient(45deg, #3498db, #2980b9); }
+        .event-planned { background: linear-gradient(45deg, #f39c12, #e67e22); }
+        .event-resolved { background: linear-gradient(45deg, #27ae60, #229954); }
+        .event-closed { background: linear-gradient(45deg, #9b59b6, #8e44ad); }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+        
+        .metric-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            border: 1px solid #e9ecef;
+            transition: all 0.3s ease;
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 15px rgba(0,0,0,0.1);
+        }
+        
+        .metric-header {
+            font-size: 16px;
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .metric-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+        }
+        
+        .metric-value {
+            font-size: 36px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #3498db, #2980b9);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .metric-description {
+            font-size: 13px;
+            color: #6c757d;
+            line-height: 1.5;
+        }
+        
+        .data-section {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            margin-top: 20px;
+        }
+        
+        .data-table th {
+            background: linear-gradient(45deg, #f8f9fa, #e9ecef);
+            color: #495057;
+            font-weight: 600;
+            padding: 15px 12px;
+            text-align: left;
+            border-bottom: 2px solid #dee2e6;
+        }
+        
+        .data-table td {
+            padding: 12px;
+            border-bottom: 1px solid #f1f3f4;
+        }
+        
+        .data-table tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .status-active {
+            background: rgba(40, 167, 69, 0.1) !important;
+            border-left: 4px solid #28a745;
+        }
+        
+        .status-inactive {
+            background: rgba(220, 53, 69, 0.1) !important;
+            border-left: 4px solid #dc3545;
+        }
+        
+        .chart-container {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        
+        .chart-canvas {
+            position: relative;
+            height: 300px;
+        }
+        
+        @media (max-width: 768px) {
+            .main-content {
+                padding: 20px;
+            }
+            
+            .control-row {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .control-label {
+                min-width: auto;
+            }
+            
+            .metrics-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="app-header">
+            <h1>数仓时间维度分析系统</h1>
+            <p>交互式展示观察时间对累计指标计算的影响 - 笛卡尔积场景解决方案演示</p>
+        </div>
+        
+        <div class="main-content">
+            <div class="control-panel">
+                <div class="control-row">
+                    <div class="control-label">观察时间</div>
+                    <div class="time-slider-container">
+                        <input type="range" id="timeSlider" class="time-slider" min="0" max="100" value="50">
+                        <div id="currentDate" class="current-date">2024-01-15</div>
+                    </div>
+                </div>
+                
+                <div class="control-row">
+                    <div class="control-label">业务场景</div>
+                    <select id="scenarioSelect" class="scenario-select">
+                        <option value="ccp_issues">CCP质疑问题管理</option>
+                        <option value="etmf_files">ETMF文件管理</option>
+                        <option value="monitoring_reports">监查报告管理</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="timeline-section">
+                <div class="section-title">
+                    事件时间轴可视化
+                </div>
+                
+                <div class="legend-container">
+                    <div class="legend-item">
+                        <div class="legend-dot legend-discovery"></div>
+                        <span>发现时间</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot legend-planned"></div>
+                        <span>计划解决时间</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot legend-resolved"></div>
+                        <span>实际解决时间</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot legend-closed"></div>
+                        <span>关闭时间</span>
+                    </div>
+                </div>
+                
+                <div class="timeline-canvas" id="timelineCanvas">
+                    <div class="timeline-grid" id="timelineGrid"></div>
+                    <div class="timeline-axis"></div>
+                    <div class="timeline-cursor" id="timelineCursor" data-date="2024-01-15"></div>
+                    <div class="y-axis-labels" id="yAxisLabels"></div>
+                </div>
+            </div>
+            
+            <div class="chart-container">
+                <div class="section-title">
+                    累计指标趋势图
+                </div>
+                <div class="chart-canvas">
+                    <canvas id="metricsChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <div class="metric-icon" style="background: linear-gradient(45deg, #e74c3c, #c0392b);"></div>
+                        延期解决问题数
+                    </div>
+                    <div class="metric-value" id="delayedCount">0</div>
+                    <div class="metric-description" id="delayedDescription">
+                        截止到观察日期，解决日期晚于计划日期的问题数量
+                    </div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <div class="metric-icon" style="background: linear-gradient(45deg, #27ae60, #229954);"></div>
+                        已解决已关闭问题数
+                    </div>
+                    <div class="metric-value" id="resolvedClosedCount">0</div>
+                    <div class="metric-description" id="resolvedClosedDescription">
+                        截止到观察日期，既解决又关闭的问题数量
+                    </div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <div class="metric-icon" style="background: linear-gradient(45deg, #f39c12, #e67e22);"></div>
+                        超期未解决问题数
+                    </div>
+                    <div class="metric-value" id="overdueCount">0</div>
+                    <div class="metric-description" id="overdueDescription">
+                        观察日期时，计划解决日期已过但仍未解决的问题数量
+                    </div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <div class="metric-icon" style="background: linear-gradient(45deg, #9b59b6, #8e44ad);"></div>
+                        近期发现问题数
+                    </div>
+                    <div class="metric-value" id="recentCount">0</div>
+                    <div class="metric-description" id="recentDescription">
+                        观察日期前90天内发现的问题数量
+                    </div>
+                </div>
+            </div>
+            
+            <div class="data-section">
+                <div class="section-title">
+                    详细数据分析表
+                </div>
+                <table class="data-table" id="dataTable">
+                    <thead>
+                        <tr>
+                            <th>问题ID</th>
+                            <th>发现日期</th>
+                            <th>计划解决日期</th>
+                            <th>实际解决日期</th>
+                            <th>关闭日期</th>
+                            <th>当前状态</th>
+                            <th>是否延期</th>
+                            <th>是否已解决</th>
+                            <th>是否已关闭</th>
+                            <th>业务描述</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dataTableBody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 业务场景数据
+        const businessScenarios = {
+            ccp_issues: {
+                name: 'CCP质疑问题管理',
+                description: 'Clinical Research质疑和问题解决流程',
+                data: [
+                    {
+                        id: 'CCP001',
+                        discoveryDate: '2024-01-05',
+                        plannedResolveDate: '2024-01-15',
+                        actualResolveDate: '2024-01-18',
+                        closeDate: '2024-01-20',
+                        description: 'EDC数据一致性质疑',
+                        severity: 'high'
+                    },
+                    {
+                        id: 'CCP002',
+                        discoveryDate: '2024-01-08',
+                        plannedResolveDate: '2024-01-12',
+                        actualResolveDate: '2024-01-11',
+                        closeDate: '2024-01-14',
+                        description: '受试者知情同意书缺失',
+                        severity: 'medium'
+                    },
+                    {
+                        id: 'CCP003',
+                        discoveryDate: '2024-01-10',
+                        plannedResolveDate: '2024-01-20',
+                        actualResolveDate: null,
+                        closeDate: null,
+                        description: '随机化程序违背',
+                        severity: 'high'
+                    },
+                    {
+                        id: 'CCP004',
+                        discoveryDate: '2024-01-12',
+                        plannedResolveDate: '2024-01-16',
+                        actualResolveDate: '2024-01-22',
+                        closeDate: '2024-01-25',
+                        description: '不良事件报告延迟',
+                        severity: 'medium'
+                    },
+                    {
+                        id: 'CCP005',
+                        discoveryDate: '2024-01-15',
+                        plannedResolveDate: '2024-01-25',
+                        actualResolveDate: '2024-01-24',
+                        closeDate: '2024-01-28',
+                        description: '实验室检测值异常',
+                        severity: 'low'
+                    },
+                    {
+                        id: 'CCP006',
+                        discoveryDate: '2024-01-18',
+                        plannedResolveDate: '2024-01-28',
+                        actualResolveDate: null,
+                        closeDate: null,
+                        description: '药物配送记录不完整',
+                        severity: 'medium'
+                    }
+                ]
+            },
+            etmf_files: {
+                name: 'ETMF文件管理',
+                description: 'Electronic Trial Master File文件上传和管理',
+                data: [
+                    {
+                        id: 'ETMF001',
+                        discoveryDate: '2024-01-03',
+                        plannedResolveDate: '2024-01-10',
+                        actualResolveDate: '2024-01-12',
+                        closeDate: '2024-01-13',
+                        description: '研究者手册上传',
+                        severity: 'high'
+                    },
+                    {
+                        id: 'ETMF002',
+                        discoveryDate: '2024-01-07',
+                        plannedResolveDate: '2024-01-15',
+                        actualResolveDate: '2024-01-14',
+                        closeDate: '2024-01-16',
+                        description: '伦理委员会批件',
+                        severity: 'high'
+                    },
+                    {
+                        id: 'ETMF003',
+                        discoveryDate: '2024-01-14',
+                        plannedResolveDate: '2024-01-21',
+                        actualResolveDate: null,
+                        closeDate: null,
+                        description: '试验用药物标签',
+                        severity: 'medium'
+                    }
+                ]
+            },
+            monitoring_reports: {
+                name: '监查报告管理',
+                description: 'Clinical Monitoring访问报告和跟进管理',
+                data: [
+                    {
+                        id: 'MON001',
+                        discoveryDate: '2024-01-04',
+                        plannedResolveDate: '2024-01-14',
+                        actualResolveDate: '2024-01-16',
+                        closeDate: '2024-01-18',
+                        description: '第一次监查访问报告',
+                        severity: 'medium'
+                    },
+                    {
+                        id: 'MON002',
+                        discoveryDate: '2024-01-11',
+                        plannedResolveDate: '2024-01-18',
+                        actualResolveDate: '2024-01-17',
+                        closeDate: '2024-01-19',
+                        description: '源数据核查报告',
+                        severity: 'high'
+                    },
+                    {
+                        id: 'MON003',
+                        discoveryDate: '2024-01-16',
+                        plannedResolveDate: '2024-01-26',
+                        actualResolveDate: null,
+                        closeDate: null,
+                        description: '试验终止访问报告',
+                        severity: 'low'
+                    }
+                ]
+            }
+        };
+
+        // 全局变量
+        let currentScenario = 'ccp_issues';
+        let currentObserveDate = new Date('2024-01-15');
+        let metricsChart = null;
+        const minDate = new Date('2024-01-01');
+        const maxDate = new Date('2024-01-31');
+
+        // 历史数据用于趋势图
+        let historicalMetrics = [];
+
+        // 应用初始化
+        function initializeApp() {
+            setupEventListeners();
+            generateHistoricalData();
+            updateVisualization();
+            initializeChart();
+        }
+
+        // 设置事件监听器
+        function setupEventListeners() {
+            const timeSlider = document.getElementById('timeSlider');
+            const scenarioSelect = document.getElementById('scenarioSelect');
+            const timelineCanvas = document.getElementById('timelineCanvas');
+
+            timeSlider.addEventListener('input', (e) => {
+                const progress = e.target.value / 100;
+                const timeDiff = maxDate.getTime() - minDate.getTime();
+                currentObserveDate = new Date(minDate.getTime() + timeDiff * progress);
+                updateVisualization();
+            });
+
+            scenarioSelect.addEventListener('change', (e) => {
+                currentScenario = e.target.value;
+                generateHistoricalData();
+                updateVisualization();
+            });
+
+            timelineCanvas.addEventListener('click', (e) => {
+                const rect = timelineCanvas.getBoundingClientRect();
+                const availableWidth = rect.width - 100; // 减去左右边距
+                const clickX = e.clientX - rect.left - 80; // 减去左边距
+                const progress = Math.max(0, Math.min(1, clickX / availableWidth));
+                const timeDiff = maxDate.getTime() - minDate.getTime();
+                currentObserveDate = new Date(minDate.getTime() + timeDiff * progress);
+                
+                // 更新滑块位置
+                timeSlider.value = progress * 100;
+                updateVisualization();
+            });
+        }
+
+        // 生成历史数据用于趋势图
+        function generateHistoricalData() {
+            historicalMetrics = [];
+            const scenario = businessScenarios[currentScenario];
+            
+            for (let d = new Date(minDate); d <= maxDate; d.setDate(d.getDate() + 1)) {
+                const observeDate = new Date(d);
+                const metrics = calculateMetricsForDate(scenario.data, observeDate);
+                
+                historicalMetrics.push({
+                    date: new Date(observeDate),
+                    ...metrics
+                });
+            }
+        }
+
+        // 为特定日期计算指标
+        function calculateMetricsForDate(data, observeDate) {
+            let delayedCount = 0;
+            let resolvedClosedCount = 0;
+            let overdueCount = 0;
+            let recentCount = 0;
+
+            const observeTime = observeDate.getTime();
+            const ninetyDaysAgo = observeTime - (90 * 24 * 60 * 60 * 1000);
+
+            data.forEach(item => {
+                const discoveryTime = new Date(item.discoveryDate).getTime();
+                const plannedTime = new Date(item.plannedResolveDate).getTime();
+                const resolvedTime = item.actualResolveDate ? new Date(item.actualResolveDate).getTime() : null;
+                const closedTime = item.closeDate ? new Date(item.closeDate).getTime() : null;
+
+                // 延期解决问题数
+                if (resolvedTime && resolvedTime > plannedTime && resolvedTime <= observeTime) {
+                    delayedCount++;
+                }
+
+                // 已解决已关闭问题数
+                if (resolvedTime && resolvedTime <= observeTime && 
+                    closedTime && closedTime <= observeTime) {
+                    resolvedClosedCount++;
+                }
+
+                // 超期未解决问题数
+                if (plannedTime < observeTime && (!resolvedTime || resolvedTime > observeTime)) {
+                    overdueCount++;
+                }
+
+                // 近期发现问题数
+                if (discoveryTime >= ninetyDaysAgo && discoveryTime <= observeTime) {
+                    recentCount++;
+                }
+            });
+
+            return { delayedCount, resolvedClosedCount, overdueCount, recentCount };
+        }
+
+        // 更新可视化
+        function updateVisualization() {
+            generateTimelineGrid();
+            updateTimelineCursor();
+            updateTimelineEvents();
+            updateMetrics();
+            updateDataTable();
+            updateChart();
+        }
+
+        // 更新时间轴游标
+        function updateTimelineCursor() {
+            const cursor = document.getElementById('timelineCursor');
+            const currentDateDisplay = document.getElementById('currentDate');
+            
+            const progress = (currentObserveDate.getTime() - minDate.getTime()) / 
+                           (maxDate.getTime() - minDate.getTime());
+            
+            // 游标在整个画布中的位置：左边距80px + 进度 * 可用宽度
+            const leftPosition = 80 + progress * (document.getElementById('timelineCanvas').offsetWidth - 100);
+            cursor.style.left = `${leftPosition}px`;
+            cursor.setAttribute('data-date', formatDate(currentObserveDate));
+            currentDateDisplay.textContent = formatDate(currentObserveDate);
+        }
+
+        // 生成时间轴网格
+        function generateTimelineGrid() {
+            const grid = document.getElementById('timelineGrid');
+            grid.innerHTML = '';
+            
+            // 生成网格线和时间标签
+            const totalDays = (maxDate.getTime() - minDate.getTime()) / (24 * 60 * 60 * 1000);
+            const gridInterval = Math.ceil(totalDays / 10); // 大约10条网格线
+            
+            for (let i = 0; i <= totalDays; i += gridInterval) {
+                const currentDate = new Date(minDate.getTime() + i * 24 * 60 * 60 * 1000);
+                const progress = i / totalDays;
+                
+                // 创建网格线
+                const gridLine = document.createElement('div');
+                gridLine.className = 'grid-line';
+                gridLine.style.left = `${progress * 100}%`;
+                
+                // 创建时间标签
+                const gridLabel = document.createElement('div');
+                gridLabel.className = 'grid-label';
+                gridLabel.style.left = `${progress * 100}%`;
+                gridLabel.textContent = formatDate(currentDate);
+                
+                gridLine.appendChild(gridLabel);
+                grid.appendChild(gridLine);
+            }
+        }
+
+        // 更新时间轴事件
+        function updateTimelineEvents() {
+            const canvas = document.getElementById('timelineCanvas');
+            const yAxisLabels = document.getElementById('yAxisLabels');
+            const scenario = businessScenarios[currentScenario];
+            
+            // 清除现有事件轨道和Y轴标签
+            const existingTracks = canvas.querySelectorAll('.event-track');
+            existingTracks.forEach(track => track.remove());
+            yAxisLabels.innerHTML = '';
+
+            // 为每个问题创建事件轨道和Y轴标签
+            scenario.data.forEach((item, index) => {
+                const track = document.createElement('div');
+                track.className = 'event-track';
+                track.style.top = `${60 + index * 45}px`;
+                
+                // 创建Y轴标签
+                const yLabel = document.createElement('div');
+                yLabel.className = 'y-axis-label';
+                yLabel.style.top = `${index * 45 + 5}px`;
+                yLabel.textContent = item.id;
+                yAxisLabels.appendChild(yLabel);
+                
+                renderEventsForItem(track, item);
+                canvas.appendChild(track);
+            });
+        }
+
+        // 为单个问题渲染事件
+        function renderEventsForItem(track, item) {
+            const events = [
+                { date: item.discoveryDate, label: '发现', class: 'event-discovery' },
+                { date: item.plannedResolveDate, label: '计划', class: 'event-planned' },
+                { date: item.actualResolveDate, label: '解决', class: 'event-resolved' },
+                { date: item.closeDate, label: '关闭', class: 'event-closed' }
+            ];
+
+            events.forEach(eventInfo => {
+                if (!eventInfo.date) return;
+                
+                const eventDate = new Date(eventInfo.date);
+                const progress = (eventDate.getTime() - minDate.getTime()) / 
+                               (maxDate.getTime() - minDate.getTime());
+                
+                const eventElement = document.createElement('div');
+                eventElement.className = `event-item ${eventInfo.class}`;
+                eventElement.style.left = `${Math.max(0, Math.min(85, progress * 100))}%`;
+                eventElement.textContent = eventInfo.label;
+                eventElement.title = `${item.id} - ${eventInfo.label}: ${eventInfo.date}`;
+                
+                // 添加点击事件
+                eventElement.addEventListener('click', () => {
+                    currentObserveDate = new Date(eventDate);
+                    const timeSlider = document.getElementById('timeSlider');
+                    timeSlider.value = progress * 100;
+                    updateVisualization();
+                });
+                
+                track.appendChild(eventElement);
+            });
+        }
+
+        // 更新指标
+        function updateMetrics() {
+            const scenario = businessScenarios[currentScenario];
+            const metrics = calculateMetricsForDate(scenario.data, currentObserveDate);
+            
+            document.getElementById('delayedCount').textContent = metrics.delayedCount;
+            document.getElementById('resolvedClosedCount').textContent = metrics.resolvedClosedCount;
+            document.getElementById('overdueCount').textContent = metrics.overdueCount;
+            document.getElementById('recentCount').textContent = metrics.recentCount;
+            
+            // 更新描述
+            const dateStr = formatDate(currentObserveDate);
+            document.getElementById('delayedDescription').textContent = 
+                `截止到${dateStr}，解决日期晚于计划日期的问题数量`;
+            document.getElementById('resolvedClosedDescription').textContent = 
+                `截止到${dateStr}，既解决又关闭的问题数量`;
+            document.getElementById('overdueDescription').textContent = 
+                `${dateStr}时，计划解决日期已过但仍未解决的问题数量`;
+            document.getElementById('recentDescription').textContent = 
+                `${dateStr}前90天内发现的问题数量`;
+        }
+
+        // 更新数据表
+        function updateDataTable() {
+            const tbody = document.getElementById('dataTableBody');
+            tbody.innerHTML = '';
+
+            const scenario = businessScenarios[currentScenario];
+            const observeTime = currentObserveDate.getTime();
+
+            scenario.data.forEach(item => {
+                const row = document.createElement('tr');
+                
+                const discoveryTime = new Date(item.discoveryDate).getTime();
+                const plannedTime = new Date(item.plannedResolveDate).getTime();
+                const resolvedTime = item.actualResolveDate ? new Date(item.actualResolveDate).getTime() : null;
+                const closedTime = item.closeDate ? new Date(item.closeDate).getTime() : null;
+
+                // 状态判定
+                let status = '';
+                let isDelayed = false;
+                let isResolved = false;
+                let isClosed = false;
+
+                if (resolvedTime && resolvedTime <= observeTime) {
+                    isResolved = true;
+                    if (resolvedTime > plannedTime) {
+                        isDelayed = true;
+                        status = '延期已解决';
+                    } else {
+                        status = '按时已解决';
+                    }
+                } else if (plannedTime < observeTime) {
+                    status = '超期未解决';
+                } else {
+                    status = '计划期内';
+                }
+
+                if (closedTime && closedTime <= observeTime) {
+                    isClosed = true;
+                    status += ' 已关闭';
+                }
+
+                // 判断行是否应该高亮
+                const isActive = (resolvedTime && resolvedTime <= observeTime) || 
+                               (plannedTime < observeTime && !resolvedTime);
+
+                row.className = isActive ? 'status-active' : 'status-inactive';
+                row.innerHTML = `
+                    <td><strong>${item.id}</strong></td>
+                    <td>${item.discoveryDate}</td>
+                    <td>${item.plannedResolveDate}</td>
+                    <td>${item.actualResolveDate || '-'}</td>
+                    <td>${item.closeDate || '-'}</td>
+                    <td><strong>${status}</strong></td>
+                    <td>${isDelayed ? '✓' : '✗'}</td>
+                    <td>${isResolved ? '✓' : '✗'}</td>
+                    <td>${isClosed ? '✓' : '✗'}</td>
+                    <td>${item.description}</td>
+                `;
+
+                tbody.appendChild(row);
+            });
+        }
+
+        // 初始化图表
+        function initializeChart() {
+            const ctx = document.getElementById('metricsChart').getContext('2d');
+            
+            metricsChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: historicalMetrics.map(item => formatDate(item.date)),
+                    datasets: [
+                        {
+                            label: '延期解决问题数',
+                            data: historicalMetrics.map(item => item.delayedCount),
+                            borderColor: '#e74c3c',
+                            backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: '已解决已关闭问题数',
+                            data: historicalMetrics.map(item => item.resolvedClosedCount),
+                            borderColor: '#27ae60',
+                            backgroundColor: 'rgba(39, 174, 96, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: '超期未解决问题数',
+                            data: historicalMetrics.map(item => item.overdueCount),
+                            borderColor: '#f39c12',
+                            backgroundColor: 'rgba(243, 156, 18, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: '近期发现问题数',
+                            data: historicalMetrics.map(item => item.recentCount),
+                            borderColor: '#9b59b6',
+                            backgroundColor: 'rgba(155, 89, 182, 0.1)',
+                            tension: 0.4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // 更新图表
+        function updateChart() {
+            if (!metricsChart) return;
+            
+            // 更新数据
+            metricsChart.data.labels = historicalMetrics.map(item => formatDate(item.date));
+            metricsChart.data.datasets[0].data = historicalMetrics.map(item => item.delayedCount);
+            metricsChart.data.datasets[1].data = historicalMetrics.map(item => item.resolvedClosedCount);
+            metricsChart.data.datasets[2].data = historicalMetrics.map(item => item.overdueCount);
+            metricsChart.data.datasets[3].data = historicalMetrics.map(item => item.recentCount);
+            
+            // 添加当前观察时间的垂直线
+            const currentIndex = historicalMetrics.findIndex(item => 
+                formatDate(item.date) === formatDate(currentObserveDate)
+            );
+            
+            if (currentIndex >= 0) {
+                metricsChart.options.plugins.annotation = {
+                    annotations: {
+                        line1: {
+                            type: 'line',
+                            xMin: currentIndex,
+                            xMax: currentIndex,
+                            borderColor: '#e74c3c',
+                            borderWidth: 3,
+                            label: {
+                                content: '当前观察时间',
+                                enabled: true,
+                                position: 'top'
+                            }
+                        }
+                    }
+                };
+            }
+            
+            metricsChart.update();
+        }
+
+        // 格式化日期
+        function formatDate(date) {
+            return date.toISOString().split('T')[0];
+        }
+
+        // 启动应用
+        initializeApp();
+    </script>
+</body>
+</html>
